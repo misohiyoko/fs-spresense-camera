@@ -41,6 +41,16 @@ Adafruit_ILI9341 tft = Adafruit_ILI9341(&SPI, TFT_DC, TFT_CS, TFT_RST);
 /**
  * Print error message
  */
+uint16_t nearPow2(int n)
+{
+    if (n <= 0) return 0;
+
+    if ((n & (n - 1)) == 0) return (uint)n;
+
+    uint ret = 1;
+    while (n > 0) { ret <<= 1; n >>= 1; }
+    return ret;
+}
 
 void printError(enum CamErr err)
 {
@@ -104,32 +114,33 @@ void CamCB(CamImage img)
        * for displaying image to a display, etc. */
       uint16_t * imgBuffPostProcessPtr = imgBuffPostProcess;
 
-      int h = 240;
-      int i = 0;
+      uint16_t h = 240;
+      uint16_t i = 0;
       float h_ave = 0.0;
       
       float w_ave = 0.0;
-      int upper_left_h = 240;
-      int upper_left_w = 320;
-      int lower_right_h = 0;
-      int lower_right_w = 0;
-      int count = 0;
+      uint16_t upper_left_h = 239;
+      uint16_t upper_left_w = 319;
+      uint16_t lower_right_h = 0;
+      uint16_t lower_right_w = 0;
+      uint16_t count = 0;
+      uint16_t maxs = 0;
       while(h--){
         int w = 320;
         while(w--){
-          uint16_t blue = (*imgBuff & 0b0000000000011111) >> 0;
-          uint16_t green = (*imgBuff & 0b0000011111100000) >> 6;
-          uint16_t red = (*imgBuff & 0b1111100000000000) >> 11;
+          int16_t blue = (*imgBuff & 0b0000000000011111) >> 0;
+          int16_t green = (*imgBuff & 0b0000011111100000) >> 6;
+          int16_t red = (*imgBuff & 0b1111100000000000) >> 11;
           //*imgBuffPostProcessPtr = 0 <= red && red < 150 && 150 < green && green < 255 && 110 < blue && blue < 255 ? 0xFF : 0x00;
-          int A = 15;
-          int B = 5;
-          int C = 10;
-          int score = ((red * A - blue * B - green * C) + 32 * (B+C)) / (A+B+C);
-          
-          if(score > 20){
-            *imgBuffPostProcessPtr = 0xFF;
-            int h_act = 240 - h;
-            int w_act = 320 - w;
+          int16_t A = 15;
+          int16_t B = 8;
+          int16_t C = 10;
+          int16_t score = ((red * A - blue * B - green * C) + 32 * (B+C)) / (A+B+C);
+          maxs = maxs < score ? score : maxs;
+          if(score > 22){
+            *imgBuffPostProcessPtr = uint16_t(score);
+            int16_t h_act = 240 - h;
+            int16_t w_act = 320 - w;
             h_ave += h_act ;
             w_ave += w_act;
             upper_left_h = h_act < upper_left_h ? h_act : upper_left_h;
@@ -147,8 +158,9 @@ void CamCB(CamImage img)
           imgBuff++;
         }        
       }
-      imgBuffPostProcessPtr -= 320*240;
-      if(count > 50){
+      imgBuffPostProcessPtr = imgBuffPostProcess;
+      imgBuff = (uint16_t *)img.getImgBuff();
+      if(count > 200){
         h_ave = h_ave / count;
         w_ave = w_ave / count;
         Serial.print(String(upper_left_h));
@@ -159,35 +171,52 @@ void CamCB(CamImage img)
         Serial.print(",");
         Serial.print(String(lower_right_w));
         Serial.print(",");
-        Serial.print(String(h_ave));
-        Serial.print(",");
-        Serial.println(String(w_ave));
-        for (int i = 0; i < 320; i++) {
-          imgBuffPostProcessPtr[int(h_ave*320 + i)] = 0x00FF00;
-        }
-        for (int i = 0; i < 240; i++) {
-          imgBuffPostProcessPtr[int(i*320 + w_ave)] = 0x00FF00;
-        }
+        Serial.println(String(maxs));
+        
+
         
         for (int i = upper_left_w; i < lower_right_w; i++) {
-          imgBuffPostProcessPtr[int(upper_left_h*320 + i)] = 0x00FF00;
-          imgBuffPostProcessPtr[int(lower_right_h*320 + i)] = 0x00FF00;
+          imgBuffPostProcessPtr[uint32_t(upper_left_h*320 + i)] = 0x00FF00;
+          imgBuffPostProcessPtr[uint32_t((lower_right_h - 1)*320 + i)] = 0x00FF00;
           
         }
         
         
         for (int i = upper_left_h; i < lower_right_h; i++) {
-          imgBuffPostProcessPtr[int(i*320 + upper_left_w)] = 0x00FF00;
-          imgBuffPostProcessPtr[int(i*320 + lower_right_w)] = 0x00FF00;
+          imgBuffPostProcessPtr[uint32_t(i*320 + upper_left_w)] = 0x00FF00;
+          imgBuffPostProcessPtr[uint32_t(i*320 + (lower_right_w - 1))] = 0x00FF00;
         }
+        /*
+        for (int i = upper_left_w+1; i < lower_right_w - 2; i++) {
+          for (int j = upper_left_h+1; j < lower_right_h - 2; j++){
+               imgBuffPostProcessPtr[uint32_t(j * 320 + i)]= imgBuff[uint32_t(j * 320 + i)];
+            }          
+        }
+        */
+        CamImage resizedImage;
+        uint16_t long_edge_pow2 = lower_right_w - upper_left_w > lower_right_h - upper_left_h ? lower_right_w - upper_left_w :  lower_right_h - upper_left_h;
+        uint16_t center_w = (upper_left_w + lower_right_w) / 2;
+        uint16_t center_h = (upper_left_h + lower_right_h) / 2;
+        uint16_t upper_left_resized_w = center_w - long_edge_pow2 / 2 + 1 > 0 ? center_w - long_edge_pow2 / 2 + 1 : 0;
+        uint16_t upper_left_resized_h = center_h - long_edge_pow2 / 2 + 1 > 0 ? center_h - long_edge_pow2 / 2 + 1 : 0;
+        long_edge_pow2 = nearPow2(long_edge_pow2);
+        img.convertPixFormat(CAM_IMAGE_PIX_FMT_YUV422);
+        CamErr err =  img.clipAndResizeImageByHW(resizedImage, upper_left_w, upper_left_h, lower_right_w-1, lower_right_h-1, 64, 64);
+        if (err != CAM_ERR_SUCCESS)
+        {
+          printError(err);
+        }
+
+        tft.drawRGBBitmap(0, 0,(uint16_t *)resizedImage.getImgBuff() ,64 ,64);
+        
         
       }else{
         Serial.println("No Cone");
        
       }
       
-      tft.drawRGBBitmap(0, 0,imgBuffPostProcessPtr, 320, 240);
-     
+      ///tft.drawRGBBitmap(0, 0,imgBuffPostProcessPtr, 320, 240);
+      
 
     }
   else
