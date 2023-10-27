@@ -1,0 +1,3 @@
+C:/Users/genta/Documents/spresense/cmake-build-debug/CMakeFiles/a.out.dir
+C:/Users/genta/Documents/spresense/cmake-build-debug/CMakeFiles/edit_cache.dir
+C:/Users/genta/Documents/spresense/cmake-build-debug/CMakeFiles/rebuild_cache.dir

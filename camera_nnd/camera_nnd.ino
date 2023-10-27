@@ -26,6 +26,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
 
+#include "img_proc.cpp"
 #define TFT_CS -1 
 #define TFT_RST 8 
 #define TFT_DC  9 
